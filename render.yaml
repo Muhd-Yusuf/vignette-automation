@@ -1,0 +1,58 @@
+# Render Blueprint — deploy API + Worker + Redis
+# https://render.com/docs/blueprint-spec
+
+services:
+  # API Server
+  - type: web
+    name: vignette-api
+    runtime: docker
+    dockerfilePath: apps/api/Dockerfile
+    dockerContext: .
+    plan: starter
+    envVars:
+      - key: MONGODB_URI
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          name: vignette-redis
+          type: redis
+          property: connectionString
+      - key: API_PORT
+        value: 4001
+      - key: API_KEY_SECRET
+        generateValue: true
+      - key: CORS_ORIGIN
+        sync: false
+      - key: NODE_ENV
+        value: production
+
+  # Background Worker (Playwright + BullMQ)
+  - type: worker
+    name: vignette-worker
+    runtime: docker
+    dockerfilePath: apps/worker/Dockerfile
+    dockerContext: .
+    plan: starter plus
+    envVars:
+      - key: MONGODB_URI
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          name: vignette-redis
+          type: redis
+          property: connectionString
+      - key: BROWSER_HEADLESS
+        value: "true"
+      - key: BROWSER_POOL_SIZE
+        value: "2"
+      - key: BROWSER_TIMEOUT
+        value: "30000"
+      - key: NODE_ENV
+        value: production
+
+  # Redis
+  - type: redis
+    name: vignette-redis
+    plan: starter
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: []

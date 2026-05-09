@@ -1,0 +1,7 @@
+{
+  "buildCommand": "pnpm turbo build --filter=@vignette/dashboard",
+  "installCommand": "pnpm install",
+  "framework": "nextjs",
+  "outputDirectory": "apps/dashboard/.next",
+  "rootDirectory": "apps/dashboard"
+}
