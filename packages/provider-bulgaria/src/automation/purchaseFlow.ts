@@ -63,71 +63,54 @@ export async function fillPurchaseForm(page: Page, params: PurchaseParams): Prom
       }
     }
   } else {
-    // BGToll uses a calendar date picker widget (likely Kendo or jQuery datepicker).
-    // Strategy: Use multiple approaches to set the date value.
-    const formattedDate = formatDateForInput(params.validityStartDate);
+    // BGToll's date field is a bootstrap-datepicker in COMPONENT mode: the
+    // picker is bound to the wrapper <div id="cbRequestValidityDate" class="date">,
+    // and the actual value lives in the readonly input #dpRequestValidityDate
+    // (name="RequestValidityDate"). The site reads it via
+    // $("#cbRequestValidityDate").datepicker("getDate"), so the ONLY reliable way
+    // to set it is datepicker("setDate", <Date>) on the wrapper — the input is
+    // readonly, so typing/value injection won't drive the widget's model.
     const targetDate = new Date(params.validityStartDate);
-    const targetDay = targetDate.getDate();
 
-    // Approach 1: Try using jQuery/Kendo datepicker API.
-    // The live BGToll form uses #dpRequestValidityDate; older/other vignette
-    // types may use #cbRequestValidityDate, so accept either.
-    const apiSet = await page.evaluate((dateStr: string) => {
-      const input = (document.getElementById('dpRequestValidityDate') ||
-        document.getElementById('cbRequestValidityDate')) as any;
-      if (!input) return false;
-      // Try Kendo UI datepicker
-      if ((window as any).$ && (window as any).$(input).data('kendoDatePicker')) {
-        const picker = (window as any).$(input).data('kendoDatePicker');
-        const parts = dateStr.split('.');
-        picker.value(new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0])));
-        picker.trigger('change');
-        return true;
+    const apiSet = await page.evaluate((ms: number) => {
+      const $ = (window as any).$;
+      if (!$ || !$.fn || !$.fn.datepicker) return false;
+      const d = new Date(ms);
+      const $wrap = $('#cbRequestValidityDate'); // wrapper the picker is bound to
+      const $input = $('#dpRequestValidityDate'); // readonly value input
+      let ok = false;
+      // Component mode: setDate on the wrapper
+      try {
+        $wrap.datepicker('setDate', d);
+        ok = ok || !!$input.val();
+      } catch { /* not bound here */ }
+      // Fallback: some builds bind directly to the input
+      if (!ok) {
+        try {
+          $input.datepicker('setDate', d);
+          ok = ok || !!$input.val();
+        } catch { /* ignore */ }
       }
-      // Try jQuery datepicker
-      if ((window as any).$ && (window as any).$.fn.datepicker) {
-        (window as any).$(input).datepicker('setDate', dateStr);
-        (window as any).$(input).trigger('change');
-        return true;
-      }
-      return false;
-    }, formattedDate);
+      // Fire the change handler the page listens on (computes the end date)
+      $input.trigger('change');
+      return !!$input.val();
+    }, targetDate.getTime());
 
     if (!apiSet) {
-      // Approach 2: Click the input, clear it, and type the date with keyboard
-      const dateInput = page.locator('#dpRequestValidityDate, #cbRequestValidityDate').first();
-      await dateInput.click().catch(() => {});
-      await page.waitForTimeout(300);
-      await page.keyboard.press('Control+a');
-      await page.keyboard.type(formattedDate, { delay: 50 });
-      await page.keyboard.press('Escape'); // dismiss calendar
-      await page.keyboard.press('Tab'); // move focus to trigger change
-      await page.waitForTimeout(500);
-
-      // Approach 3: Force set value via JS as last resort
-      const inputVal = await page.evaluate(() => {
-        const el = (document.getElementById('dpRequestValidityDate') ||
-          document.getElementById('cbRequestValidityDate')) as HTMLInputElement;
-        return el?.value || '';
-      });
-
-      if (!inputVal) {
-        await page.evaluate((dateVal: string) => {
-          const input = (document.getElementById('dpRequestValidityDate') ||
-            document.getElementById('cbRequestValidityDate')) as HTMLInputElement;
-          if (input) {
-            const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-            if (nativeSetter) nativeSetter.call(input, dateVal);
-            else input.value = dateVal;
-            input.dispatchEvent(new Event('change', { bubbles: true }));
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-            input.dispatchEvent(new Event('blur', { bubbles: true }));
-          }
-        }, formattedDate);
-      }
+      // Last resort: open the calendar and click the day cell for the target date.
+      const wrapper = page.locator('#cbRequestValidityDate .input-group-addon, #dpRequestValidityDate').first();
+      await wrapper.click().catch(() => {});
+      await page.waitForTimeout(400);
+      const day = targetDate.getDate();
+      await page
+        .locator(`.datepicker-days td.day:not(.old):not(.new):not(.disabled)`, { hasText: String(day) })
+        .first()
+        .click()
+        .catch(() => {});
+      await page.waitForTimeout(400);
     }
 
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(800);
   }
 
   // 4. Set validity start time (if time field exists)

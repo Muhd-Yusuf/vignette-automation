@@ -13,16 +13,21 @@ export async function switchLanguage(page: Page, lang: string): Promise<void> {
 }
 
 /**
- * Appends a language hint to a payment-gateway URL so it doesn't default to
- * Bulgarian. Different gateways use different param names, so we set the common
- * ones (`lang`, `language`, `lng`) without clobbering any the URL already has.
+ * Forces the language on a payment-gateway URL. BGToll always emits the TECS
+ * gateway URL with `lang=bg` regardless of the UI culture, so we must OVERRIDE
+ * it (not just add when missing) to get the gateway in the chosen language.
+ *
+ * Verified against prod-bg.tecspayment.com: it reads `lang` and renders English
+ * for `lang=en` / Bulgarian for `lang=bg`, and the request signature does not
+ * cover `lang`, so overriding it is safe. We also set `language`/`lng` as
+ * harmless fallbacks for other gateways.
  */
 export function appendLanguageToUrl(rawUrl: string, lang: string): string {
   if (!rawUrl) return rawUrl;
   try {
     const url = new URL(rawUrl);
     for (const param of ['lang', 'language', 'lng']) {
-      if (!url.searchParams.has(param)) url.searchParams.set(param, lang);
+      url.searchParams.set(param, lang);
     }
     return url.toString();
   } catch {
