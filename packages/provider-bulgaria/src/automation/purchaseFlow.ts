@@ -31,15 +31,118 @@ export async function fillPurchaseForm(page: Page, params: PurchaseParams): Prom
   await plateInput.fill(params.plateNumber.toUpperCase());
 
   // 3. Set validity start date
-  const dateInput = page.locator(SELECTORS.dateInput).first();
-  if (await dateInput.isVisible()) {
-    await dateInput.fill(formatDateForInput(params.validityStartDate));
+  // For weekend vignettes, BGToll shows a dropdown of available weekends instead of date picker
+  const weekendDropdown = page.locator(SELECTORS.weekendDropdown).first();
+  if (await weekendDropdown.isVisible().catch(() => false)) {
+    // Select the desired weekend date from dropdown
+    const formattedDate = formatDateForInput(params.validityStartDate);
+    try {
+      // Find the option whose label contains the formatted date
+      const options = await weekendDropdown.locator('option').all();
+      let matched = false;
+      for (const opt of options) {
+        const text = await opt.textContent();
+        if (text && text.includes(formattedDate)) {
+          const val = await opt.getAttribute('value');
+          if (val) {
+            await weekendDropdown.selectOption({ value: val });
+            matched = true;
+            break;
+          }
+        }
+      }
+      if (!matched && options.length > 1) {
+        // Fallback: select first available weekend
+        await weekendDropdown.selectOption({ index: 1 });
+      }
+    } catch {
+      // Fallback: select by index (first future weekend)
+      const options = await weekendDropdown.locator('option').all();
+      if (options.length > 1) {
+        await weekendDropdown.selectOption({ index: 1 });
+      }
+    }
+  } else {
+    // BGToll uses a calendar date picker widget (likely Kendo or jQuery datepicker).
+    // Strategy: Use multiple approaches to set the date value.
+    const formattedDate = formatDateForInput(params.validityStartDate);
+    const targetDate = new Date(params.validityStartDate);
+    const targetDay = targetDate.getDate();
+
+    // Approach 1: Try using jQuery/Kendo datepicker API.
+    // The live BGToll form uses #dpRequestValidityDate; older/other vignette
+    // types may use #cbRequestValidityDate, so accept either.
+    const apiSet = await page.evaluate((dateStr: string) => {
+      const input = (document.getElementById('dpRequestValidityDate') ||
+        document.getElementById('cbRequestValidityDate')) as any;
+      if (!input) return false;
+      // Try Kendo UI datepicker
+      if ((window as any).$ && (window as any).$(input).data('kendoDatePicker')) {
+        const picker = (window as any).$(input).data('kendoDatePicker');
+        const parts = dateStr.split('.');
+        picker.value(new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0])));
+        picker.trigger('change');
+        return true;
+      }
+      // Try jQuery datepicker
+      if ((window as any).$ && (window as any).$.fn.datepicker) {
+        (window as any).$(input).datepicker('setDate', dateStr);
+        (window as any).$(input).trigger('change');
+        return true;
+      }
+      return false;
+    }, formattedDate);
+
+    if (!apiSet) {
+      // Approach 2: Click the input, clear it, and type the date with keyboard
+      const dateInput = page.locator('#dpRequestValidityDate, #cbRequestValidityDate').first();
+      await dateInput.click().catch(() => {});
+      await page.waitForTimeout(300);
+      await page.keyboard.press('Control+a');
+      await page.keyboard.type(formattedDate, { delay: 50 });
+      await page.keyboard.press('Escape'); // dismiss calendar
+      await page.keyboard.press('Tab'); // move focus to trigger change
+      await page.waitForTimeout(500);
+
+      // Approach 3: Force set value via JS as last resort
+      const inputVal = await page.evaluate(() => {
+        const el = (document.getElementById('dpRequestValidityDate') ||
+          document.getElementById('cbRequestValidityDate')) as HTMLInputElement;
+        return el?.value || '';
+      });
+
+      if (!inputVal) {
+        await page.evaluate((dateVal: string) => {
+          const input = (document.getElementById('dpRequestValidityDate') ||
+            document.getElementById('cbRequestValidityDate')) as HTMLInputElement;
+          if (input) {
+            const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+            if (nativeSetter) nativeSetter.call(input, dateVal);
+            else input.value = dateVal;
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('blur', { bubbles: true }));
+          }
+        }, formattedDate);
+      }
+    }
+
+    await page.waitForTimeout(500);
   }
 
-  // 4. Set validity start time (if dropdown exists)
-  const timeSelect = page.locator(SELECTORS.timeDropdown).first();
-  if (await timeSelect.isVisible().catch(() => false)) {
-    await timeSelect.selectOption({ value: params.validityStartTime });
+  // 4. Set validity start time (if time field exists)
+  const timeField = page.locator(SELECTORS.timeDropdown).first();
+  if (await timeField.isVisible().catch(() => false)) {
+    const tagName = await timeField.evaluate((el) => el.tagName.toLowerCase());
+    if (tagName === 'select') {
+      await timeField.selectOption({ value: params.validityStartTime });
+    } else {
+      // Text input timepicker (used by daily vignettes)
+      await timeField.click();
+      await page.keyboard.press('Control+a');
+      await page.keyboard.type(params.validityStartTime || '00:00', { delay: 30 });
+      await page.keyboard.press('Tab');
+    }
   }
 
   // 5. Wait for end date calculation (AJAX)
@@ -65,10 +168,17 @@ export async function fillPurchaseForm(page: Page, params: PurchaseParams): Prom
 // using stealth browser bypass — no paid service needed
 
 export async function submitAndConfirm(page: Page): Promise<void> {
-  // Click the confirm/submit button
+  // Click the confirm/submit button using JS click to bypass any overlays (reCAPTCHA popup)
   const submitBtn = page.locator(SELECTORS.confirmButton).first();
-  await submitBtn.waitFor({ state: 'visible' });
-  await submitBtn.click();
+  await submitBtn.waitFor({ state: 'attached' });
+
+  // Use evaluate to click directly, bypassing overlay checks
+  await page.evaluate(() => {
+    const btn = document.getElementById('btnConfirm') ||
+      document.querySelector('button[type="submit"]') ||
+      document.querySelector('.btn-primary');
+    if (btn) (btn as HTMLElement).click();
+  });
 
   // Wait for either a SweetAlert dialog or page navigation
   await Promise.race([

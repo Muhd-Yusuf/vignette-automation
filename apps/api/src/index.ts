@@ -7,6 +7,7 @@ import { config } from './config';
 import { initQueues } from './services/queueService';
 import { purchaseRoutes } from './routes/purchases';
 import { verificationRoutes } from './routes/verification';
+import { checkPeriodRoutes } from './routes/checkPeriod';
 import { configRoutes } from './routes/config';
 
 async function main() {
@@ -47,6 +48,7 @@ async function main() {
   // Register routes
   await app.register(purchaseRoutes);
   await app.register(verificationRoutes);
+  await app.register(checkPeriodRoutes);
   await app.register(configRoutes);
 
   // Global error handler

@@ -13,6 +13,7 @@ interface PurchaseJobData {
   validityStartDate: string;
   validityStartTime: string;
   email: string;
+  language?: 'bg' | 'en' | 'de' | 'ru' | 'tr' | 'el' | 'sr' | 'ro';
 }
 
 export function createPurchaseProcessor(pool: BrowserPoolManager, providerConfig: BulgariaConfig) {

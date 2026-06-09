@@ -12,6 +12,7 @@ const purchaseSchema = z.object({
   validityStartDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   validityStartTime: z.string().regex(/^\d{2}:\d{2}$/).default('00:00'),
   email: z.string().email(),
+  language: z.enum(['bg', 'en', 'de', 'ru', 'tr', 'el', 'sr', 'ro']).default('en'),
   callbackUrl: z.string().url().optional(),
   metadata: z.record(z.unknown()).optional(),
 });
@@ -37,6 +38,12 @@ export async function purchaseRoutes(app: FastifyInstance) {
           validityStartDate: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description: 'YYYY-MM-DD' },
           validityStartTime: { type: 'string', pattern: '^\\d{2}:\\d{2}$', default: '00:00' },
           email: { type: 'string', format: 'email' },
+          language: {
+            type: 'string',
+            enum: ['bg', 'en', 'de', 'ru', 'tr', 'el', 'sr', 'ro'],
+            default: 'en',
+            description: 'UI + payment gateway language',
+          },
           callbackUrl: { type: 'string', format: 'uri' },
           metadata: { type: 'object', additionalProperties: true },
         },

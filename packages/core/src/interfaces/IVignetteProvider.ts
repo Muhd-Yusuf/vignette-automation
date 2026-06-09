@@ -1,3 +1,6 @@
+/** BGToll-supported UI / payment-gateway languages */
+export type VignetteLanguage = 'bg' | 'en' | 'de' | 'ru' | 'tr' | 'el' | 'sr' | 'ro';
+
 export interface PurchaseParams {
   vehicleType: 'light' | 'trailer';
   vignetteType: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annual' | 'weekend';
@@ -6,6 +9,8 @@ export interface PurchaseParams {
   validityStartDate: string;
   validityStartTime: string;
   email: string;
+  /** UI + payment gateway language (defaults to 'en') */
+  language?: VignetteLanguage;
 }
 
 export interface PurchaseResult {
@@ -68,6 +73,43 @@ export interface VerificationResult {
   error?: string;
 }
 
+export interface CheckPeriodParams {
+  vehicleType: 'light' | 'trailer';
+  vignetteType: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annual' | 'weekend';
+  vehicleCountry: string;
+  plateNumber: string;
+  validityStartDate: string;
+  validityStartTime?: string;
+}
+
+/** A vignette that overlaps the requested period, as returned by CheckPeriod. */
+export interface OverlappingVignette {
+  vignetteNumber?: string;
+  validityType?: string;
+  vehicleType?: string;
+  validFrom?: Date;
+  validTo?: Date;
+  amount?: string;
+  status?: string;
+  /** True when this overlap exactly matches the requested type+period (blocks purchase) */
+  exactMatch?: boolean;
+}
+
+export interface CheckPeriodResult {
+  /** True when the plate CAN be purchased for the requested period */
+  purchasable: boolean;
+  /** True if any existing vignette overlaps the requested period (soft warning) */
+  isOverlapping: boolean;
+  /** True if an existing vignette exactly matches (hard block) */
+  hasExactMatching: boolean;
+  /** True if the requested start is close to end-of-day (soft warning) */
+  isCloseToEndDay: boolean;
+  /** Localized message from BGToll when the purchase is blocked */
+  message?: string;
+  overlappingVignettes: OverlappingVignette[];
+  error?: string;
+}
+
 export interface IVignetteProvider {
   readonly name: string;
   readonly country: string;
@@ -75,5 +117,7 @@ export interface IVignetteProvider {
 
   purchase(params: PurchaseParams): Promise<PurchaseResult>;
   verify(params: VerificationParams): Promise<VerificationResult>;
+  /** Pre-purchase validation: can this plate be purchased for the given period? */
+  checkPeriod(params: CheckPeriodParams): Promise<CheckPeriodResult>;
   healthCheck(): Promise<boolean>;
 }
