@@ -12,13 +12,44 @@ const purchaseSchema = z.object({
   validityStartDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   validityStartTime: z.string().regex(/^\d{2}:\d{2}$/).default('00:00'),
   email: z.string().email(),
+  language: z.enum(['bg', 'en', 'de', 'ru', 'tr', 'el', 'sr', 'ro']).default('en'),
   callbackUrl: z.string().url().optional(),
   metadata: z.record(z.unknown()).optional(),
 });
 
 export async function purchaseRoutes(app: FastifyInstance) {
   // Create a new purchase
-  app.post('/api/v1/purchases', async (request, reply) => {
+  app.post('/api/v1/purchases', {
+    schema: {
+      tags: ['purchases'],
+      summary: 'Create a vignette purchase',
+      description:
+        'Queues a vignette purchase. Returns an order id; poll GET /api/v1/purchases/{id} ' +
+        'until status is "awaiting_payment" (paymentUrl available) or "failed".',
+      body: {
+        type: 'object',
+        required: ['vehicleType', 'vignetteType', 'vehicleCountry', 'plateNumber', 'validityStartDate', 'email'],
+        properties: {
+          country: { type: 'string', default: 'bulgaria' },
+          vehicleType: { type: 'string', enum: ['light', 'trailer'] },
+          vignetteType: { type: 'string', enum: ['daily', 'weekly', 'monthly', 'quarterly', 'annual', 'weekend'] },
+          vehicleCountry: { type: 'string', minLength: 2, maxLength: 3, description: 'ISO country code, e.g. CZ' },
+          plateNumber: { type: 'string', minLength: 1, maxLength: 20, description: 'License plate, e.g. 8C81539' },
+          validityStartDate: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description: 'YYYY-MM-DD' },
+          validityStartTime: { type: 'string', pattern: '^\\d{2}:\\d{2}$', default: '00:00' },
+          email: { type: 'string', format: 'email' },
+          language: {
+            type: 'string',
+            enum: ['bg', 'en', 'de', 'ru', 'tr', 'el', 'sr', 'ro'],
+            default: 'en',
+            description: 'UI + payment gateway language',
+          },
+          callbackUrl: { type: 'string', format: 'uri' },
+          metadata: { type: 'object', additionalProperties: true },
+        },
+      },
+    },
+  }, async (request, reply) => {
     const body = purchaseSchema.parse(request.body);
 
     // Create purchase record
@@ -61,7 +92,13 @@ export async function purchaseRoutes(app: FastifyInstance) {
   });
 
   // Get purchase by ID
-  app.get('/api/v1/purchases/:id', async (request, reply) => {
+  app.get('/api/v1/purchases/:id', {
+    schema: {
+      tags: ['purchases'],
+      summary: 'Get a purchase by id',
+      params: { type: 'object', required: ['id'], properties: { id: { type: 'string' } } },
+    },
+  }, async (request, reply) => {
     const { id } = request.params as { id: string };
 
     const purchase = await Purchase.findById(id);
@@ -91,7 +128,20 @@ export async function purchaseRoutes(app: FastifyInstance) {
   });
 
   // List purchases
-  app.get('/api/v1/purchases', async (request) => {
+  app.get('/api/v1/purchases', {
+    schema: {
+      tags: ['purchases'],
+      summary: 'List purchases',
+      querystring: {
+        type: 'object',
+        properties: {
+          status: { type: 'string' },
+          page: { type: 'string', default: '1' },
+          limit: { type: 'string', default: '20' },
+        },
+      },
+    },
+  }, async (request) => {
     const { status, page = '1', limit = '20' } = request.query as {
       status?: string;
       page?: string;
@@ -131,7 +181,13 @@ export async function purchaseRoutes(app: FastifyInstance) {
   });
 
   // Cancel a purchase
-  app.post('/api/v1/purchases/:id/cancel', async (request, reply) => {
+  app.post('/api/v1/purchases/:id/cancel', {
+    schema: {
+      tags: ['purchases'],
+      summary: 'Cancel a queued/processing purchase',
+      params: { type: 'object', required: ['id'], properties: { id: { type: 'string' } } },
+    },
+  }, async (request, reply) => {
     const { id } = request.params as { id: string };
 
     const purchase = await Purchase.findById(id);
@@ -149,8 +205,26 @@ export async function purchaseRoutes(app: FastifyInstance) {
     return { id: purchase._id, status: 'cancelled' };
   });
 
+  // Clear all orders (delete from database)
+  app.delete('/api/v1/purchases', {
+    schema: {
+      tags: ['purchases'],
+      summary: 'Delete all purchases',
+      description: 'Destructive: removes every purchase record from the database.',
+    },
+  }, async (_request, reply) => {
+    const result = await Purchase.deleteMany({});
+    return reply.send({ deleted: result.deletedCount });
+  });
+
   // Retry a failed purchase
-  app.post('/api/v1/purchases/:id/retry', async (request, reply) => {
+  app.post('/api/v1/purchases/:id/retry', {
+    schema: {
+      tags: ['purchases'],
+      summary: 'Retry a failed purchase',
+      params: { type: 'object', required: ['id'], properties: { id: { type: 'string' } } },
+    },
+  }, async (request, reply) => {
     const { id } = request.params as { id: string };
 
     const purchase = await Purchase.findById(id);

@@ -31,15 +31,101 @@ export async function fillPurchaseForm(page: Page, params: PurchaseParams): Prom
   await plateInput.fill(params.plateNumber.toUpperCase());
 
   // 3. Set validity start date
-  const dateInput = page.locator(SELECTORS.dateInput).first();
-  if (await dateInput.isVisible()) {
-    await dateInput.fill(formatDateForInput(params.validityStartDate));
+  // For weekend vignettes, BGToll shows a dropdown of available weekends instead of date picker
+  const weekendDropdown = page.locator(SELECTORS.weekendDropdown).first();
+  if (await weekendDropdown.isVisible().catch(() => false)) {
+    // Select the desired weekend date from dropdown
+    const formattedDate = formatDateForInput(params.validityStartDate);
+    try {
+      // Find the option whose label contains the formatted date
+      const options = await weekendDropdown.locator('option').all();
+      let matched = false;
+      for (const opt of options) {
+        const text = await opt.textContent();
+        if (text && text.includes(formattedDate)) {
+          const val = await opt.getAttribute('value');
+          if (val) {
+            await weekendDropdown.selectOption({ value: val });
+            matched = true;
+            break;
+          }
+        }
+      }
+      if (!matched && options.length > 1) {
+        // Fallback: select first available weekend
+        await weekendDropdown.selectOption({ index: 1 });
+      }
+    } catch {
+      // Fallback: select by index (first future weekend)
+      const options = await weekendDropdown.locator('option').all();
+      if (options.length > 1) {
+        await weekendDropdown.selectOption({ index: 1 });
+      }
+    }
+  } else {
+    // BGToll's date field is a bootstrap-datepicker in COMPONENT mode: the
+    // picker is bound to the wrapper <div id="cbRequestValidityDate" class="date">,
+    // and the actual value lives in the readonly input #dpRequestValidityDate
+    // (name="RequestValidityDate"). The site reads it via
+    // $("#cbRequestValidityDate").datepicker("getDate"), so the ONLY reliable way
+    // to set it is datepicker("setDate", <Date>) on the wrapper — the input is
+    // readonly, so typing/value injection won't drive the widget's model.
+    const targetDate = new Date(params.validityStartDate);
+
+    const apiSet = await page.evaluate((ms: number) => {
+      const $ = (window as any).$;
+      if (!$ || !$.fn || !$.fn.datepicker) return false;
+      const d = new Date(ms);
+      const $wrap = $('#cbRequestValidityDate'); // wrapper the picker is bound to
+      const $input = $('#dpRequestValidityDate'); // readonly value input
+      let ok = false;
+      // Component mode: setDate on the wrapper
+      try {
+        $wrap.datepicker('setDate', d);
+        ok = ok || !!$input.val();
+      } catch { /* not bound here */ }
+      // Fallback: some builds bind directly to the input
+      if (!ok) {
+        try {
+          $input.datepicker('setDate', d);
+          ok = ok || !!$input.val();
+        } catch { /* ignore */ }
+      }
+      // Fire the change handler the page listens on (computes the end date)
+      $input.trigger('change');
+      return !!$input.val();
+    }, targetDate.getTime());
+
+    if (!apiSet) {
+      // Last resort: open the calendar and click the day cell for the target date.
+      const wrapper = page.locator('#cbRequestValidityDate .input-group-addon, #dpRequestValidityDate').first();
+      await wrapper.click().catch(() => {});
+      await page.waitForTimeout(400);
+      const day = targetDate.getDate();
+      await page
+        .locator(`.datepicker-days td.day:not(.old):not(.new):not(.disabled)`, { hasText: String(day) })
+        .first()
+        .click()
+        .catch(() => {});
+      await page.waitForTimeout(400);
+    }
+
+    await page.waitForTimeout(800);
   }
 
-  // 4. Set validity start time (if dropdown exists)
-  const timeSelect = page.locator(SELECTORS.timeDropdown).first();
-  if (await timeSelect.isVisible().catch(() => false)) {
-    await timeSelect.selectOption({ value: params.validityStartTime });
+  // 4. Set validity start time (if time field exists)
+  const timeField = page.locator(SELECTORS.timeDropdown).first();
+  if (await timeField.isVisible().catch(() => false)) {
+    const tagName = await timeField.evaluate((el) => el.tagName.toLowerCase());
+    if (tagName === 'select') {
+      await timeField.selectOption({ value: params.validityStartTime });
+    } else {
+      // Text input timepicker (used by daily vignettes)
+      await timeField.click();
+      await page.keyboard.press('Control+a');
+      await page.keyboard.type(params.validityStartTime || '00:00', { delay: 30 });
+      await page.keyboard.press('Tab');
+    }
   }
 
   // 5. Wait for end date calculation (AJAX)
@@ -65,10 +151,17 @@ export async function fillPurchaseForm(page: Page, params: PurchaseParams): Prom
 // using stealth browser bypass — no paid service needed
 
 export async function submitAndConfirm(page: Page): Promise<void> {
-  // Click the confirm/submit button
+  // Click the confirm/submit button using JS click to bypass any overlays (reCAPTCHA popup)
   const submitBtn = page.locator(SELECTORS.confirmButton).first();
-  await submitBtn.waitFor({ state: 'visible' });
-  await submitBtn.click();
+  await submitBtn.waitFor({ state: 'attached' });
+
+  // Use evaluate to click directly, bypassing overlay checks
+  await page.evaluate(() => {
+    const btn = document.getElementById('btnConfirm') ||
+      document.querySelector('button[type="submit"]') ||
+      document.querySelector('.btn-primary');
+    if (btn) (btn as HTMLElement).click();
+  });
 
   // Wait for either a SweetAlert dialog or page navigation
   await Promise.race([

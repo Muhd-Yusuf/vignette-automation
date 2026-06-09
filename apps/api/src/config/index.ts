@@ -6,6 +6,6 @@ export const config = {
   redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
   apiKeySecret: process.env.API_KEY_SECRET || 'dev-secret',
   cors: {
-    origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+    origin: process.env.CORS_ORIGIN || true,
   },
 };

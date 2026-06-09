@@ -6,6 +6,7 @@ import { BulgariaConfig } from '@vignette/provider-bulgaria';
 import { BrowserPoolManager } from './browser/poolManager';
 import { createPurchaseProcessor } from './processors/purchaseProcessor';
 import { createVerificationProcessor } from './processors/verificationProcessor';
+import { createCheckPeriodProcessor } from './processors/checkPeriodProcessor';
 
 async function main() {
   // Connect to MongoDB
@@ -23,10 +24,12 @@ async function main() {
   });
   await pool.initialize();
 
-  // Provider config — no CAPTCHA API key needed, uses stealth bypass
+  // Provider config
   const providerConfig: BulgariaConfig = {
     language: 'en',
-    navigationTimeout: parseInt(process.env.BROWSER_TIMEOUT || '30000', 10),
+    navigationTimeout: parseInt(process.env.BROWSER_TIMEOUT || '60000', 10),
+    captchaApiKey: process.env.CAPTCHA_API_KEY,
+    captchaService: (process.env.CAPTCHA_SERVICE as any) || 'capsolver',
   };
 
   // Purchase worker
@@ -66,6 +69,24 @@ async function main() {
     console.error(`Verification job ${job?.id} failed:`, err.message);
   });
 
+  // Check-period worker (pre-purchase validation; no CAPTCHA, so it's quick)
+  const checkPeriodWorker = new Worker(
+    'check-period',
+    createCheckPeriodProcessor(pool, providerConfig),
+    {
+      connection,
+      concurrency: 2,
+    }
+  );
+
+  checkPeriodWorker.on('completed', (job) => {
+    console.log(`Check-period job ${job.id} completed`);
+  });
+
+  checkPeriodWorker.on('failed', (job, err) => {
+    console.error(`Check-period job ${job?.id} failed:`, err.message);
+  });
+
   console.log('Worker started. Listening for jobs...');
   console.log('Browser pool stats:', pool.getStats());
 
@@ -74,6 +95,7 @@ async function main() {
     console.log('Shutting down...');
     await purchaseWorker.close();
     await verificationWorker.close();
+    await checkPeriodWorker.close();
     await pool.shutdown();
     await connection.quit();
     process.exit(0);

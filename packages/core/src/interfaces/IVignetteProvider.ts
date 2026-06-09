@@ -1,3 +1,6 @@
+/** BGToll-supported UI / payment-gateway languages */
+export type VignetteLanguage = 'bg' | 'en' | 'de' | 'ru' | 'tr' | 'el' | 'sr' | 'ro';
+
 export interface PurchaseParams {
   vehicleType: 'light' | 'trailer';
   vignetteType: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annual' | 'weekend';
@@ -6,6 +9,8 @@ export interface PurchaseParams {
   validityStartDate: string;
   validityStartTime: string;
   email: string;
+  /** UI + payment gateway language (defaults to 'en') */
+  language?: VignetteLanguage;
 }
 
 export interface PurchaseResult {
@@ -26,12 +31,82 @@ export interface VerificationParams {
   status?: 'active' | 'expired' | 'unused';
 }
 
-export interface VerificationResult {
-  found: boolean;
-  isActive?: boolean;
+/**
+ * A single vignette record as listed on the BGToll TollProduct page.
+ * One license plate can have several (e.g. an expired one plus an active one).
+ */
+export interface VignetteRecord {
+  /** BGToll Id Number, e.g. "26060562638274" */
+  idNumber?: string;
+  vehicleClass?: string;
+  emissionClass?: string;
+  numberOfAxles?: string;
+  co2Class?: string;
   validFrom?: Date;
   validTo?: Date;
+  /** Raw price cell, e.g. "49,60 € (97,00 лв.)" */
+  amount?: string;
+  priceEUR?: number;
+  priceBGN?: number;
+  /** Normalized status: active | expired | unused | unknown */
+  status?: 'active' | 'expired' | 'unused' | 'unknown';
+  /** Original status label as shown on the site, e.g. "Active" / "Активен" */
+  statusLabel?: string;
+}
+
+export interface VerificationResult {
+  /** True if the plate has at least one vignette of any status */
+  found: boolean;
+  /** True if at least one vignette is currently active */
+  isActive?: boolean;
+  /** Full list of vignettes for the plate (all statuses) */
+  vignettes?: VignetteRecord[];
+  /** Convenience pointer to the active vignette, if any */
+  activeVignette?: VignetteRecord;
+  // --- Deprecated single-record fields, kept for backward compatibility ---
+  /** @deprecated use activeVignette/vignettes — was mislabeled as "productType" */
+  validFrom?: Date;
+  /** @deprecated use activeVignette/vignettes */
+  validTo?: Date;
+  /** @deprecated this was actually the Id Number, not a product type */
   productType?: string;
+  error?: string;
+}
+
+export interface CheckPeriodParams {
+  vehicleType: 'light' | 'trailer';
+  vignetteType: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annual' | 'weekend';
+  vehicleCountry: string;
+  plateNumber: string;
+  validityStartDate: string;
+  validityStartTime?: string;
+}
+
+/** A vignette that overlaps the requested period, as returned by CheckPeriod. */
+export interface OverlappingVignette {
+  vignetteNumber?: string;
+  validityType?: string;
+  vehicleType?: string;
+  validFrom?: Date;
+  validTo?: Date;
+  amount?: string;
+  status?: string;
+  /** True when this overlap exactly matches the requested type+period (blocks purchase) */
+  exactMatch?: boolean;
+}
+
+export interface CheckPeriodResult {
+  /** True when the plate CAN be purchased for the requested period */
+  purchasable: boolean;
+  /** True if any existing vignette overlaps the requested period (soft warning) */
+  isOverlapping: boolean;
+  /** True if an existing vignette exactly matches (hard block) */
+  hasExactMatching: boolean;
+  /** True if the requested start is close to end-of-day (soft warning) */
+  isCloseToEndDay: boolean;
+  /** Localized message from BGToll when the purchase is blocked */
+  message?: string;
+  overlappingVignettes: OverlappingVignette[];
   error?: string;
 }
 
@@ -42,5 +117,7 @@ export interface IVignetteProvider {
 
   purchase(params: PurchaseParams): Promise<PurchaseResult>;
   verify(params: VerificationParams): Promise<VerificationResult>;
+  /** Pre-purchase validation: can this plate be purchased for the given period? */
+  checkPeriod(params: CheckPeriodParams): Promise<CheckPeriodResult>;
   healthCheck(): Promise<boolean>;
 }
