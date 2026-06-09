@@ -1,4 +1,4 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001/api/v1';
 
 async function fetchAPI<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -32,6 +32,9 @@ export const api = {
   cancelPurchase: (id: string) =>
     fetchAPI(`/purchases/${id}/cancel`, { method: 'POST' }),
 
+  clearAllPurchases: () =>
+    fetchAPI('/purchases', { method: 'DELETE' }),
+
   retryPurchase: (id: string) =>
     fetchAPI(`/purchases/${id}/retry`, { method: 'POST' }),
 
@@ -40,6 +43,12 @@ export const api = {
     fetchAPI('/verify', { method: 'POST', body: JSON.stringify(data) }),
 
   getVerification: (id: string) => fetchAPI(`/verify/${id}`),
+
+  // Pre-purchase period check
+  checkPeriod: (data: any) =>
+    fetchAPI('/check-period', { method: 'POST', body: JSON.stringify(data) }),
+
+  getCheckPeriod: (id: string) => fetchAPI(`/check-period/${id}`),
 
   // Config
   getVignetteTypes: () => fetchAPI('/config/vignette-types'),
