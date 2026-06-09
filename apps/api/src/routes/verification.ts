@@ -58,11 +58,13 @@ export async function verificationRoutes(app: FastifyInstance) {
       plateNumber: verification.plateNumber,
       result: verification.status === 'completed'
         ? {
-            found: verification.isActive !== undefined,
-            isActive: verification.isActive,
+            found: (verification.vignettes?.length ?? 0) > 0 || verification.isActive !== undefined,
+            isActive: verification.isActive ?? false,
+            vignettes: verification.vignettes ?? [],
+            // Backward-compatible single-record fields (point at the active vignette)
             validFrom: verification.validFrom?.toISOString(),
             validTo: verification.validTo?.toISOString(),
-            productType: verification.productType,
+            idNumber: verification.productType,
           }
         : undefined,
       error: verification.error,

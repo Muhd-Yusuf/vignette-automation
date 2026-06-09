@@ -3,18 +3,40 @@
 import { useState } from 'react';
 import { api } from '@/lib/api';
 
+interface VignetteRecord {
+  idNumber?: string;
+  vehicleClass?: string;
+  validFrom?: string;
+  validTo?: string;
+  amount?: string;
+  status?: 'active' | 'expired' | 'unused' | 'unknown';
+  statusLabel?: string;
+}
+
 interface VerificationResult {
   id: string;
   status: string;
   result?: {
     found: boolean;
     isActive?: boolean;
+    vignettes?: VignetteRecord[];
     validFrom?: string;
     validTo?: string;
-    productType?: string;
+    idNumber?: string;
   };
   error?: string;
 }
+
+function fmt(d?: string) {
+  return d ? new Date(d).toLocaleString() : '—';
+}
+
+const STATUS_STYLES: Record<string, string> = {
+  active: 'bg-green-100 text-green-800',
+  expired: 'bg-gray-200 text-gray-700',
+  unused: 'bg-blue-100 text-blue-800',
+  unknown: 'bg-yellow-100 text-yellow-800',
+};
 
 export default function VerifyPage() {
   const [form, setForm] = useState({ vehicleCountry: '', plateNumber: '' });
@@ -36,9 +58,9 @@ export default function VerifyPage() {
         plateNumber: form.plateNumber,
       }) as { id: string };
 
-      // Poll for result
+      // Poll for result (CAPTCHA solving takes 60-90s, so poll for up to 150s)
       let attempts = 0;
-      while (attempts < 20) {
+      while (attempts < 50) {
         await new Promise((r) => setTimeout(r, 3000));
         const data = await api.getVerification(initial.id) as VerificationResult;
 
@@ -49,8 +71,8 @@ export default function VerifyPage() {
         attempts++;
       }
 
-      if (attempts >= 20) {
-        setError('Verification timed out');
+      if (attempts >= 50) {
+        setError('Verification timed out — CAPTCHA solving may be slow, try again');
       }
     } catch (err: any) {
       setError(err.message);
@@ -108,18 +130,49 @@ export default function VerifyPage() {
         <div className={`mt-4 rounded-lg border p-4 ${
           result.result?.isActive ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'
         }`}>
-          <h3 className="font-bold mb-2">
+          <h3 className="font-bold mb-3">
             {result.result?.found
-              ? result.result.isActive ? 'Active Vignette Found' : 'Vignette Found (Inactive)'
+              ? result.result.isActive
+                ? 'Active Vignette Found'
+                : 'Vignette(s) Found — none currently active'
               : 'No Vignette Found'}
           </h3>
-          {result.result?.found && (
-            <div className="space-y-1 text-sm">
-              {result.result.productType && <p>Type: {result.result.productType}</p>}
-              {result.result.validFrom && <p>Valid From: {new Date(result.result.validFrom).toLocaleDateString()}</p>}
-              {result.result.validTo && <p>Valid To: {new Date(result.result.validTo).toLocaleDateString()}</p>}
+
+          {result.result?.found && (result.result.vignettes?.length ?? 0) > 0 && (
+            <div className="overflow-x-auto -mx-2">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="text-left text-gray-500 border-b">
+                    <th className="px-2 py-1 font-medium">Id Number</th>
+                    <th className="px-2 py-1 font-medium">Vehicle Class</th>
+                    <th className="px-2 py-1 font-medium">Valid From</th>
+                    <th className="px-2 py-1 font-medium">Valid To</th>
+                    <th className="px-2 py-1 font-medium">Amount</th>
+                    <th className="px-2 py-1 font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.result.vignettes!.map((v, i) => (
+                    <tr key={v.idNumber ?? i} className="border-b last:border-0">
+                      <td className="px-2 py-1.5 font-mono text-xs">{v.idNumber ?? '—'}</td>
+                      <td className="px-2 py-1.5">{v.vehicleClass ?? '—'}</td>
+                      <td className="px-2 py-1.5 whitespace-nowrap">{fmt(v.validFrom)}</td>
+                      <td className="px-2 py-1.5 whitespace-nowrap">{fmt(v.validTo)}</td>
+                      <td className="px-2 py-1.5 whitespace-nowrap">{v.amount ?? '—'}</td>
+                      <td className="px-2 py-1.5">
+                        <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
+                          STATUS_STYLES[v.status ?? 'unknown']
+                        }`}>
+                          {v.statusLabel ?? v.status ?? 'unknown'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
+
           {result.error && <p className="text-red-600 text-sm mt-2">{result.error}</p>}
         </div>
       )}
