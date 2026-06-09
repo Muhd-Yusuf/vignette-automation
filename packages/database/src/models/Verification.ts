@@ -14,6 +14,7 @@ export interface IVerification extends Document {
   status: 'pending' | 'completed' | 'failed';
   error?: string;
   createdAt: Date;
+  finalizedAt?: Date;
 }
 
 const VerificationSchema = new Schema<IVerification>(
@@ -29,6 +30,7 @@ const VerificationSchema = new Schema<IVerification>(
     rawResponse: { type: Schema.Types.Mixed },
     status: { type: String, enum: ['pending', 'completed', 'failed'], default: 'pending' },
     error: { type: String },
+    finalizedAt: { type: Date },
   },
   { timestamps: { createdAt: true, updatedAt: false } }
 );

@@ -47,6 +47,7 @@ export function createPurchaseProcessor(pool: BrowserPoolManager, providerConfig
           priceEUR: result.priceEUR,
           priceBGN: result.priceBGN,
           validityEndDate: result.validityEnd,
+          completedAt: new Date(),
         });
 
         await logStep(purchaseId, 'info', 'payment_url_extracted', `Payment URL: ${result.paymentUrl}`);
@@ -57,6 +58,7 @@ export function createPurchaseProcessor(pool: BrowserPoolManager, providerConfig
         await Purchase.findByIdAndUpdate(purchaseId, {
           status: 'failed',
           lastError: result.error || 'Unknown error',
+          completedAt: new Date(),
         });
 
         await logStep(purchaseId, 'error', 'purchase_failed', result.error || 'Unknown error');
@@ -69,6 +71,7 @@ export function createPurchaseProcessor(pool: BrowserPoolManager, providerConfig
       await Purchase.findByIdAndUpdate(purchaseId, {
         status: 'failed',
         lastError: errorMsg,
+        completedAt: new Date(),
       });
 
       await logStep(purchaseId, 'error', 'exception', errorMsg);

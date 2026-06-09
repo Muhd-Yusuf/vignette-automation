@@ -37,7 +37,8 @@ export default function NewPurchasePage() {
     setError('');
     setAvailability(null);
     try {
-      const { id } = (await api.checkPeriod({
+      // The endpoint is synchronous and returns the result directly (~15s).
+      let data: any = await api.checkPeriod({
         country: form.country,
         vehicleType: form.vehicleType,
         vignetteType: form.vignetteType,
@@ -45,8 +46,11 @@ export default function NewPurchasePage() {
         plateNumber: form.plateNumber,
         validityStartDate: form.validityStartDate,
         validityStartTime: form.validityStartTime,
-      })) as { id: string };
-      const data = await pollResult(id, api.getCheckPeriod);
+      });
+      // Rare fallback: if it came back still pending, poll the GET endpoint.
+      if (data?.status === 'pending' && data?.id) {
+        data = await pollResult(data.id, api.getCheckPeriod);
+      }
       setAvailability(data.result ?? { error: data.error });
       return data.result;
     } catch (err: any) {
