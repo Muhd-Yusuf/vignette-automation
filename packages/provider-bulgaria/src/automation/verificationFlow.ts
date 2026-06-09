@@ -14,7 +14,9 @@ export async function verifyVignette(
     waitUntil: 'domcontentloaded',
     timeout: 30000,
   });
-  await page.waitForLoadState('networkidle').catch(() => {});
+  // Bound the idle wait — the reCAPTCHA widget keeps the network busy, so
+  // 'networkidle' may never fire and would otherwise block the full timeout.
+  await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
   // 1. Select country
   console.log('[BGToll Verify] Selecting country:', params.vehicleCountry);
@@ -52,9 +54,19 @@ export async function verifyVignette(
     if (btn) btn.click();
   });
 
-  // Wait for results
-  await page.waitForTimeout(5000);
-  await page.waitForLoadState('domcontentloaded').catch(() => {});
+  // Wait for results to render — resolve as soon as a results row OR an error/
+  // no-data message appears instead of blocking on a fixed 5s timeout.
+  await Promise.race([
+    page
+      .waitForSelector(
+        'table tbody tr td, #txtCaptchaError:not(.d-none), .validation-summary-errors, .alert-danger',
+        { state: 'attached', timeout: 20000 }
+      )
+      .catch(() => {}),
+    page.waitForTimeout(20000),
+  ]);
+  // Small settle for any post-render row population
+  await page.waitForTimeout(500);
 
   console.log('[BGToll Verify] After search, URL:', page.url());
 
