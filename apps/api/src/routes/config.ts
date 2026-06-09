@@ -3,7 +3,9 @@ import { VIGNETTE_PRICES } from '@vignette/provider-bulgaria';
 
 export async function configRoutes(app: FastifyInstance) {
   // Get available vignette types and prices
-  app.get('/api/v1/config/vignette-types', async () => {
+  app.get('/api/v1/config/vignette-types', {
+    schema: { tags: ['config'], summary: 'Vehicle/vignette types and prices' },
+  }, async () => {
     return {
       bulgaria: {
         provider: 'bgtoll',
@@ -22,7 +24,9 @@ export async function configRoutes(app: FastifyInstance) {
   });
 
   // Health check
-  app.get('/api/v1/health', async () => {
+  app.get('/api/v1/health', {
+    schema: { tags: ['config'], summary: 'Health check' },
+  }, async () => {
     return {
       status: 'ok',
       timestamp: new Date().toISOString(),
@@ -31,7 +35,9 @@ export async function configRoutes(app: FastifyInstance) {
   });
 
   // Stats for dashboard
-  app.get('/api/v1/stats', async () => {
+  app.get('/api/v1/stats', {
+    schema: { tags: ['config'], summary: 'Dashboard purchase stats' },
+  }, async () => {
     const { Purchase } = await import('@vignette/database');
 
     const today = new Date();

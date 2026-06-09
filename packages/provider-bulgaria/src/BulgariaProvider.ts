@@ -5,13 +5,15 @@ import {
   PurchaseResult,
   VerificationParams,
   VerificationResult,
+  CheckPeriodParams,
+  CheckPeriodResult,
 } from '@vignette/core';
-import { CaptchaSolver } from './captcha/captchaSolver';
+import { CaptchaSolver, CaptchaService } from './captcha/captchaSolver';
 import {
   BGTOLL_BASE_URL,
   BGTOLL_URLS,
   VEHICLE_TYPE_IDS,
-  VIGNETTE_VALIDITY_TYPE_IDS,
+  VIGNETTE_TYPE_IDS,
   VIGNETTE_PRICES,
 } from './config/urls';
 import {
@@ -21,11 +23,15 @@ import {
   setupPaymentUrlInterception,
 } from './automation/purchaseFlow';
 import { verifyVignette } from './automation/verificationFlow';
+import { checkPeriodOnPage } from './automation/checkPeriodFlow';
 import { switchLanguage } from './utils/languageSwitcher';
+import { appendLanguageToUrl } from './utils/languageSwitcher';
 
 export interface BulgariaConfig {
   language?: string;
   navigationTimeout?: number;
+  captchaApiKey?: string;
+  captchaService?: CaptchaService; // 'capsolver' | 'capmonster' | '2captcha' (default: '2captcha')
 }
 
 export class BulgariaProvider implements IVignetteProvider {
@@ -41,7 +47,10 @@ export class BulgariaProvider implements IVignetteProvider {
     config: BulgariaConfig
   ) {
     this.config = config;
-    this.captchaSolver = new CaptchaSolver();
+    this.captchaSolver = new CaptchaSolver({
+      apiKey: config.captchaApiKey,
+      service: config.captchaService,
+    });
   }
 
   async purchase(params: PurchaseParams): Promise<PurchaseResult> {
@@ -54,27 +63,61 @@ export class BulgariaProvider implements IVignetteProvider {
     });
 
     const page = await context.newPage();
-    page.setDefaultTimeout(this.config.navigationTimeout || 30000);
+    const timeout = this.config.navigationTimeout || 60000;
+    page.setDefaultTimeout(timeout);
+    page.setDefaultNavigationTimeout(timeout);
+
+    // Language drives both the BGToll UI and (via the inherited culture cookie)
+    // the payment gateway. Defaults to English.
+    const language = params.language || (this.config.language as PurchaseParams['language']) || 'en';
 
     try {
-      // Step 1: Switch to English
-      await switchLanguage(page, this.config.language || 'en');
+      // Step 1: Switch to the requested language (sets a culture cookie + redirects)
+      console.log(`[BGToll] Switching language to '${language}'...`);
+      await page.goto(`${this.baseUrl}/Localization/ChangeCulture?lang=${language}`, {
+        waitUntil: 'domcontentloaded',
+        timeout,
+      });
+      // Wait for redirect to complete and cookies to be set
+      await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
-      // Step 2: Navigate to validity period selection
+      // Step 2: Navigate directly to the purchase form page
+      // Skip the validity period page — go straight to /Evignette/Create?vignetteTypeID=X
+      const vignetteTypeId = VIGNETTE_TYPE_IDS[params.vignetteType];
       const vehicleTypeId = VEHICLE_TYPE_IDS[params.vehicleType];
-      await page.goto(`${this.baseUrl}${BGTOLL_URLS.validityPeriod(vehicleTypeId)}`);
-      await page.waitForLoadState('networkidle');
+      const createUrl = `${this.baseUrl}/Evignette/Create?vignetteTypeID=${vignetteTypeId}&vignetteVehicleTypeID=${vehicleTypeId}`;
+      console.log('[BGToll] Navigating to purchase form:', createUrl);
 
-      // Step 3: Click the correct vignette type link
-      const vignetteTypeId = VIGNETTE_VALIDITY_TYPE_IDS[params.vignetteType];
-      const vignetteLink = page.locator(
-        `a[href*="vignetteValidityTypeID=${vignetteTypeId}"], a[href*="ValidityTypeID=${vignetteTypeId}"]`
-      ).first();
-      await vignetteLink.click();
-      await page.waitForLoadState('networkidle');
+      await page.goto(createUrl, {
+        waitUntil: 'commit',
+        timeout,
+      });
+      await page.waitForLoadState('domcontentloaded').catch(() => {});
 
       // Step 4: Fill the purchase form
       await fillPurchaseForm(page, params);
+
+      // Step 4b: Pre-validate the period via CheckPeriod BEFORE spending a CAPTCHA
+      // solve. BGToll rejects a purchase when the plate already has an exactly
+      // matching vignette for the period — fail fast with its own message instead
+      // of submitting and failing after the (slow, paid) CAPTCHA step.
+      console.log('[BGToll] Running CheckPeriod pre-validation...');
+      const period = await checkPeriodOnPage(page, {
+        vehicleCountry: params.vehicleCountry,
+        plateNumber: params.plateNumber,
+        validityStartDate: params.validityStartDate,
+        validityStartTime: params.validityStartTime,
+      });
+      if (period.error) {
+        console.log('[BGToll] CheckPeriod inconclusive, continuing:', period.error);
+      } else if (!period.purchasable) {
+        return {
+          success: false,
+          error:
+            period.message ||
+            'Purchase blocked: the plate already has a matching vignette for this period.',
+        };
+      }
 
       // Step 5: Bypass CAPTCHA using stealth techniques (no paid service)
       const captchaSolved = await this.captchaSolver.solveOnPage(page);
@@ -83,38 +126,84 @@ export class BulgariaProvider implements IVignetteProvider {
       }
 
       // Step 6: Set up payment URL interception BEFORE submit
-      const paymentUrlPromise = setupPaymentUrlInterception(page);
+      // Attach .catch to prevent unhandled rejection if interception times out
+      const paymentUrlPromise = setupPaymentUrlInterception(page).catch((e) => {
+        console.log('[BGToll] Payment interception:', e.message);
+        return null as unknown as string;
+      });
 
       // Step 7: Submit form and handle confirmation
+      console.log('[BGToll] Submitting form...');
       await submitAndConfirm(page);
 
-      // Step 8: Extract payment URL (race between interception and page scan)
+      console.log('[BGToll] After submit, current URL:', page.url());
+
+      // Step 8: Wait for page to settle after submit
+      await page.waitForLoadState('domcontentloaded').catch(() => {});
+      await page.waitForTimeout(3000);
+
+      // Check if form submission was rejected (still on Create page = something failed)
+      if (page.url().includes('/Evignette/Create')) {
+        // Check for specific error messages on the page
+        const errorText = await page.evaluate(() => {
+          // Look for validation error messages
+          const validationErrors = document.querySelector('.validation-summary-errors, .alert-danger, .field-validation-error');
+          if (validationErrors?.textContent?.trim()) return validationErrors.textContent.trim();
+          // Look for the specific CAPTCHA error in Bulgarian
+          const captchaError = document.getElementById('txtCaptchaError');
+          if (captchaError?.textContent?.trim()) return `CAPTCHA error: ${captchaError.textContent.trim()}`;
+          // Check for required field highlights
+          const requiredFields = document.querySelectorAll('.input-validation-error, .is-invalid');
+          if (requiredFields.length > 0) return `Form validation failed: ${requiredFields.length} required field(s) not filled`;
+          return 'Form submission was rejected (page did not redirect)';
+        });
+        throw new Error(errorText);
+      }
+
+      console.log('[BGToll] After settle, current URL:', page.url());
+
+      // Step 9: Extract payment URL (race between interception and page scan)
       let paymentUrl: string;
-      try {
-        paymentUrl = await Promise.race([
-          paymentUrlPromise,
-          extractPaymentUrl(page),
-        ]);
-      } catch {
-        // Last resort: wait a bit and check current page
-        await page.waitForTimeout(3000);
-        paymentUrl = await extractPaymentUrl(page);
+      const interceptedUrl = await paymentUrlPromise;
+      if (interceptedUrl) {
+        paymentUrl = interceptedUrl;
+      } else {
+        try {
+          paymentUrl = await extractPaymentUrl(page);
+        } catch {
+          console.log('[BGToll] First extraction failed, waiting...');
+          await page.waitForTimeout(5000);
+          paymentUrl = await extractPaymentUrl(page);
+        }
       }
 
       const prices = VIGNETTE_PRICES[params.vignetteType];
 
+      // Carry the chosen language onto the payment gateway URL so the paygate
+      // doesn't fall back to Bulgarian.
+      const localizedPaymentUrl = appendLanguageToUrl(paymentUrl, language);
+
       return {
         success: true,
-        paymentUrl,
+        paymentUrl: localizedPaymentUrl,
         paymentUrlExpiry: new Date(Date.now() + 15 * 60 * 1000),
         priceEUR: prices.eur,
         priceBGN: prices.bgn,
       };
     } catch (error) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      console.error('[BGToll] Purchase error:', errMsg);
+      console.error('[BGToll] Final page URL:', page.url());
+
+      // Save screenshot for debugging
+      const screenshotPath = `/tmp/bgtoll-error-${Date.now()}.png`;
+      await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {});
+      console.error('[BGToll] Screenshot saved:', screenshotPath);
+
       const screenshot = await page.screenshot().catch(() => undefined);
       return {
         success: false,
-        error: error instanceof Error ? error.message : String(error),
+        error: errMsg,
         screenshots: screenshot ? [screenshot] : undefined,
       };
     } finally {
@@ -139,6 +228,57 @@ export class BulgariaProvider implements IVignetteProvider {
     } catch (error) {
       return {
         found: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    } finally {
+      await context.close();
+    }
+  }
+
+  async checkPeriod(params: CheckPeriodParams): Promise<CheckPeriodResult> {
+    const context = await this.browser.newContext({
+      locale: 'en-GB',
+      timezoneId: 'Europe/Sofia',
+      userAgent:
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    });
+
+    const page = await context.newPage();
+    const timeout = this.config.navigationTimeout || 30000;
+    page.setDefaultTimeout(timeout);
+    page.setDefaultNavigationTimeout(timeout);
+
+    try {
+      const language = (this.config.language as string) || 'en';
+      await page.goto(`${this.baseUrl}/Localization/ChangeCulture?lang=${language}`, {
+        waitUntil: 'domcontentloaded',
+        timeout,
+      });
+      await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+
+      // Load the Create page so we get the anti-forgery token, the resolved
+      // vignette type ids, and the session cookies CheckPeriod requires.
+      const vignetteTypeId = VIGNETTE_TYPE_IDS[params.vignetteType];
+      const vehicleTypeId = VEHICLE_TYPE_IDS[params.vehicleType];
+      await page.goto(
+        `${this.baseUrl}/Evignette/Create?vignetteTypeID=${vignetteTypeId}&vignetteVehicleTypeID=${vehicleTypeId}`,
+        { waitUntil: 'commit', timeout }
+      );
+      await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+
+      return await checkPeriodOnPage(page, {
+        vehicleCountry: params.vehicleCountry,
+        plateNumber: params.plateNumber,
+        validityStartDate: params.validityStartDate,
+        validityStartTime: params.validityStartTime,
+      });
+    } catch (error) {
+      return {
+        purchasable: false,
+        isOverlapping: false,
+        hasExactMatching: false,
+        isCloseToEndDay: false,
+        overlappingVignettes: [],
         error: error instanceof Error ? error.message : String(error),
       };
     } finally {

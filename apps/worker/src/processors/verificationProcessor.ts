@@ -24,6 +24,7 @@ export function createVerificationProcessor(pool: BrowserPoolManager, providerCo
       await Verification.findByIdAndUpdate(verificationId, {
         status: 'completed',
         isActive: result.isActive,
+        vignettes: result.vignettes,
         validFrom: result.validFrom,
         validTo: result.validTo,
         productType: result.productType,

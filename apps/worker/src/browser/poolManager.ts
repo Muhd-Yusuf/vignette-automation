@@ -1,7 +1,12 @@
-import { chromium, Browser } from 'playwright';
+import { chromium } from 'playwright-extra';
+import type { Browser } from 'playwright';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 
-// Stealth args to make browser undetectable by reCAPTCHA
-const STEALTH_ARGS = [
+// Add stealth plugin — patches all automation detection vectors
+// This is what makes reCAPTCHA think we're a real browser
+chromium.use(StealthPlugin());
+
+const BROWSER_ARGS = [
   '--no-sandbox',
   '--disable-setuid-sandbox',
   '--disable-dev-shm-usage',
@@ -36,7 +41,7 @@ export class BrowserPoolManager {
     }
 
     this.initialized = true;
-    console.log(`Browser pool initialized with ${this.config.maxInstances} instances`);
+    console.log(`Browser pool initialized with ${this.config.maxInstances} instances (stealth mode)`);
   }
 
   async acquire(): Promise<Browser> {
@@ -99,7 +104,7 @@ export class BrowserPoolManager {
   private async launchBrowser(): Promise<Browser> {
     return chromium.launch({
       headless: this.config.headless,
-      args: STEALTH_ARGS,
+      args: BROWSER_ARGS,
     });
   }
 }

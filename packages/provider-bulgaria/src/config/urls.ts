@@ -14,15 +14,15 @@ export const VEHICLE_TYPE_IDS = {
   trailer: 2,
 } as const;
 
-// Maps our vignette type names to BGToll's internal validity type IDs
-// These IDs appear in the link hrefs on the ValidityPeriod page
-export const VIGNETTE_VALIDITY_TYPE_IDS: Record<string, number> = {
-  daily: 6,
+// Maps our vignette type names to BGToll's internal vignetteTypeID values
+// These IDs appear in the link hrefs on the ValidityPeriod page: /Evignette/Create?vignetteTypeID=X
+export const VIGNETTE_TYPE_IDS: Record<string, number> = {
+  daily: 27,
   weekly: 1,
   monthly: 2,
   quarterly: 3,
   annual: 4,
-  weekend: 7,
+  weekend: 5,
 };
 
 export const VIGNETTE_PRICES: Record<string, { eur: number; bgn: number }> = {

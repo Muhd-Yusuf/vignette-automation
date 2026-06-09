@@ -5,6 +5,8 @@ export interface IVerification extends Document {
   vehicleCountry: string;
   plateNumber: string;
   isActive?: boolean;
+  /** Full list of vignettes returned for the plate (all statuses) */
+  vignettes?: Record<string, unknown>[];
   validFrom?: Date;
   validTo?: Date;
   productType?: string;
@@ -20,6 +22,7 @@ const VerificationSchema = new Schema<IVerification>(
     vehicleCountry: { type: String, required: true },
     plateNumber: { type: String, required: true, uppercase: true },
     isActive: { type: Boolean },
+    vignettes: { type: [Schema.Types.Mixed], default: undefined },
     validFrom: { type: Date },
     validTo: { type: Date },
     productType: { type: String },

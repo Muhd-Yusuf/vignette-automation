@@ -4,17 +4,18 @@ export const SELECTORS = {
   languageForm: 'form[action*="ChangeCulture"]',
 
   // Validity period page - links to choose vignette duration
-  vignetteLink: (typeId: number) => `a[href*="vignetteValidityTypeID=${typeId}"], a[href*="ValidityTypeID=${typeId}"]`,
+  vignetteLink: (typeId: number) => `a[href*="vignetteTypeID=${typeId}"]`,
 
-  // Create/Purchase form
-  countryDropdown: 'select[id*="ountry"], select[name*="ountry"], #VehicleCountryId',
-  plateInput: 'input[id*="late"], input[name*="late"], #LicensePlateNumber',
-  dateInput: 'input[id*="Date"], input[id*="date"], input[name*="ValidityStartDate"]',
-  timeDropdown: 'select[id*="ime"], select[name*="Time"], #ValidityStartTime',
-  emailInput: 'input[type="email"], input[id*="mail"], input[name*="mail"]',
+  // Create/Purchase form (actual BGToll field IDs)
+  countryDropdown: '#ddlVehicleNationality, select[id*="ountry"], select[name*="ountry"]',
+  plateInput: '#txtLicensePlateNumber, input[id*="late"], input[name*="late"]',
+  dateInput: '#dpRequestValidityDate, #cbRequestValidityDate, input[id*="Date"], input[id*="date"]',
+  timeDropdown: '#dpRequestValidityTime, select[id*="ime"], select[name*="Time"]',
+  weekendDropdown: '#ddlWeekends',
+  emailInput: '#txtEmail, input[type="email"], input[id*="mail"]',
   termsCheckbox: 'input[type="checkbox"][id*="erm"], input[type="checkbox"][name*="erm"]',
   allCheckboxes: 'input[type="checkbox"]',
-  confirmButton: 'button[type="submit"], input[type="submit"], #btnConfirm, .btn-primary',
+  confirmButton: '#btnConfirm, button[type="submit"], input[type="submit"], .btn-primary',
 
   // Confirmation dialog (SweetAlert / modal)
   sweetAlertPopup: '.swal2-popup, .sweet-alert, .modal.show',

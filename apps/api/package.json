@@ -9,20 +9,22 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@fastify/cors": "^10.0.0",
+    "@fastify/swagger": "^9",
+    "@fastify/swagger-ui": "^5",
     "@vignette/core": "workspace:*",
     "@vignette/database": "workspace:*",
     "@vignette/provider-bulgaria": "workspace:*",
-    "fastify": "^5.2.0",
-    "@fastify/cors": "^10.0.0",
     "bullmq": "^5.34.0",
-    "ioredis": "^5.4.0",
     "dotenv": "^16.4.0",
+    "fastify": "^5.2.0",
+    "ioredis": "^5.4.0",
     "nanoid": "^5.0.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {
-    "typescript": "^5.7.0",
+    "@types/node": "^22.0.0",
     "tsx": "^4.19.0",
-    "@types/node": "^22.0.0"
+    "typescript": "^5.7.0"
   }
 }

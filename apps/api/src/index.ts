@@ -1,10 +1,13 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import swagger from '@fastify/swagger';
+import swaggerUI from '@fastify/swagger-ui';
 import { connectDB } from '@vignette/database';
 import { config } from './config';
 import { initQueues } from './services/queueService';
 import { purchaseRoutes } from './routes/purchases';
 import { verificationRoutes } from './routes/verification';
+import { checkPeriodRoutes } from './routes/checkPeriod';
 import { configRoutes } from './routes/config';
 
 async function main() {
@@ -12,6 +15,29 @@ async function main() {
 
   // Plugins
   await app.register(cors, { origin: config.cors.origin });
+
+  // OpenAPI / Swagger docs — must be registered before the routes so their
+  // schemas are collected. UI served at /docs, raw spec at /docs/json.
+  await app.register(swagger, {
+    openapi: {
+      info: {
+        title: 'Vignette Automation API',
+        description:
+          'Programmatic purchase and verification of Bulgarian BGToll e-Vignettes.',
+        version: '1.0.0',
+      },
+      servers: [{ url: '/', description: 'Current server' }],
+      tags: [
+        { name: 'verification', description: 'Check existing vignettes for a plate' },
+        { name: 'purchases', description: 'Create and track vignette purchases' },
+        { name: 'config', description: 'Pricing and configuration' },
+      ],
+    },
+  });
+  await app.register(swaggerUI, {
+    routePrefix: '/docs',
+    uiConfig: { docExpansion: 'list', deepLinking: true },
+  });
 
   // Connect to MongoDB
   await connectDB(config.mongodbUri);
@@ -22,6 +48,7 @@ async function main() {
   // Register routes
   await app.register(purchaseRoutes);
   await app.register(verificationRoutes);
+  await app.register(checkPeriodRoutes);
   await app.register(configRoutes);
 
   // Global error handler

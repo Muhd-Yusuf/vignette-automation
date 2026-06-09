@@ -17,6 +17,8 @@ export interface VignettePrice {
   bgn: number;
 }
 
+import type { VignetteLanguage } from '../interfaces/IVignetteProvider';
+
 export interface PurchaseRequest {
   country: string;
   vehicleType: VehicleType;
@@ -26,6 +28,8 @@ export interface PurchaseRequest {
   validityStartDate: string;
   validityStartTime: string;
   email: string;
+  /** UI + payment gateway language (defaults to 'en') */
+  language?: VignetteLanguage;
   callbackUrl?: string;
   metadata?: Record<string, unknown>;
 }
