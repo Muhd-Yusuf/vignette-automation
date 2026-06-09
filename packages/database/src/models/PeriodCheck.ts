@@ -17,6 +17,7 @@ export interface IPeriodCheck extends Document {
   overlappingVignettes?: Record<string, unknown>[];
   error?: string;
   createdAt: Date;
+  finalizedAt?: Date;
 }
 
 const PeriodCheckSchema = new Schema<IPeriodCheck>(
@@ -36,6 +37,7 @@ const PeriodCheckSchema = new Schema<IPeriodCheck>(
     message: { type: String },
     overlappingVignettes: { type: [Schema.Types.Mixed], default: undefined },
     error: { type: String },
+    finalizedAt: { type: Date },
   },
   { timestamps: { createdAt: true, updatedAt: false } }
 );

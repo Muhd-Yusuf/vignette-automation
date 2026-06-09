@@ -124,6 +124,10 @@ export async function purchaseRoutes(app: FastifyInstance) {
       error: purchase.lastError,
       createdAt: purchase.createdAt,
       updatedAt: purchase.updatedAt,
+      finalizedAt: purchase.completedAt,
+      durationMs: purchase.completedAt
+        ? purchase.completedAt.getTime() - purchase.createdAt.getTime()
+        : undefined,
     };
   });
 

@@ -124,6 +124,8 @@ export async function verificationRoutes(app: FastifyInstance) {
             },
             error: { type: 'string', nullable: true },
             createdAt: { type: 'string', format: 'date-time' },
+            finalizedAt: { type: 'string', format: 'date-time', nullable: true },
+            durationMs: { type: 'integer', nullable: true, description: 'Wall-clock time to complete the verification' },
           },
         },
         404: {
@@ -158,6 +160,10 @@ export async function verificationRoutes(app: FastifyInstance) {
         : undefined,
       error: verification.error,
       createdAt: verification.createdAt,
+      finalizedAt: verification.finalizedAt,
+      durationMs: verification.finalizedAt
+        ? verification.finalizedAt.getTime() - verification.createdAt.getTime()
+        : undefined,
     };
   });
 }

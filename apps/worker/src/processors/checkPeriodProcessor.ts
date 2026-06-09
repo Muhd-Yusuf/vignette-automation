@@ -33,12 +33,13 @@ export function createCheckPeriodProcessor(pool: BrowserPoolManager, providerCon
         message: result.message,
         overlappingVignettes: result.overlappingVignettes,
         error: result.error,
+        finalizedAt: new Date(),
       });
 
       return result;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      await PeriodCheck.findByIdAndUpdate(checkId, { status: 'failed', error: errorMsg });
+      await PeriodCheck.findByIdAndUpdate(checkId, { status: 'failed', error: errorMsg, finalizedAt: new Date() });
       throw error;
     } finally {
       await pool.release(browser);

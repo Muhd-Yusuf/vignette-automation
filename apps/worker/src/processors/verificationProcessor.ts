@@ -29,6 +29,7 @@ export function createVerificationProcessor(pool: BrowserPoolManager, providerCo
         validTo: result.validTo,
         productType: result.productType,
         error: result.error,
+        finalizedAt: new Date(),
       });
 
       return result;
@@ -38,6 +39,7 @@ export function createVerificationProcessor(pool: BrowserPoolManager, providerCo
       await Verification.findByIdAndUpdate(verificationId, {
         status: 'failed',
         error: errorMsg,
+        finalizedAt: new Date(),
       });
 
       throw error;
