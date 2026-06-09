@@ -24,6 +24,7 @@ export default function OrdersPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
   const [error, setError] = useState('');
+  const [clearing, setClearing] = useState(false);
 
   useEffect(() => {
     api.listPurchases({ status: statusFilter || undefined, page, limit: 20 })
@@ -45,9 +46,33 @@ export default function OrdersPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold text-gray-900">Orders</h2>
-        <a href="/orders/new" className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
-          New Purchase
-        </a>
+        <div className="flex gap-2">
+          <button
+            onClick={async () => {
+              if (!confirm('Clear all orders? This cannot be undone.')) return;
+              setClearing(true);
+              try {
+                await api.clearAllPurchases();
+                setPurchases(null);
+                setPage(1);
+                // Re-fetch
+                const data = await api.listPurchases({ status: statusFilter || undefined, page: 1, limit: 20 });
+                setPurchases(data as PurchaseList);
+              } catch (err: any) {
+                setError(err.message);
+              } finally {
+                setClearing(false);
+              }
+            }}
+            disabled={clearing}
+            className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 disabled:opacity-50"
+          >
+            {clearing ? 'Clearing...' : 'Clear All Orders'}
+          </button>
+          <a href="/orders/new" className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
+            New Purchase
+          </a>
+        </div>
       </div>
 
       <div className="flex gap-2 mb-4">
