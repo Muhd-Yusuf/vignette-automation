@@ -2,6 +2,35 @@ import { FastifyInstance } from 'fastify';
 import { VIGNETTE_PRICES } from '@vignette/provider-bulgaria';
 
 export async function configRoutes(app: FastifyInstance) {
+  // Root → send people to the interactive docs (friendly landing instead of 404)
+  app.get('/', { schema: { hide: true } }, async (_req, reply) => reply.redirect('/docs'));
+
+  // API base prefix → helpful index instead of a bare 404
+  app.get('/api/v1', {
+    schema: {
+      tags: ['config'],
+      summary: 'API index',
+      description: 'Landing response for the API base path; lists available endpoints and docs.',
+    },
+  }, async (request) => {
+    const base = `${request.protocol}://${request.host}`;
+    return {
+      name: 'Vignette Automation API',
+      version: '1.0.0',
+      status: 'ok',
+      documentation: `${base}/docs`,
+      openapi: `${base}/docs/json`,
+      endpoints: {
+        health: 'GET /api/v1/health',
+        verify: 'POST /api/v1/verify  ·  GET /api/v1/verify/{id}',
+        checkPeriod: 'POST /api/v1/check-period  ·  GET /api/v1/check-period/{id}',
+        purchases: 'POST /api/v1/purchases  ·  GET /api/v1/purchases  ·  GET /api/v1/purchases/{id}',
+        config: 'GET /api/v1/config/vignette-types',
+        stats: 'GET /api/v1/stats',
+      },
+    };
+  });
+
   // Get available vignette types and prices
   app.get('/api/v1/config/vignette-types', {
     schema: { tags: ['config'], summary: 'Vehicle/vignette types and prices' },
